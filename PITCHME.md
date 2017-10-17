@@ -3,6 +3,8 @@
 ### golangのゼロ値ではまった話し
 ### @tap1ra
 
+#### Fukuoka.go#9 LT
+
 ---
 
 ### 自己紹介
@@ -11,12 +13,13 @@
   + SIerで保険屋さん向けSE
   + ペパボでロリポ・ヘテムル
 - 釣り
+- ここ半年golangを触る機会があって使ってます
 
 ---
 
 ### golangのゼロ値について
 
-ある型の変数に値を代入して初期化しなかった時の値
+ある型の値を初期化しなかった時の値
 
 ---
 
@@ -35,22 +38,29 @@
 
 ---
 
-### nilじゃない・・・？
-boolean: false
-int: 0
+### nilにならない型がある!!
+
+| 型        | ゼロ値                    |
+| --------- | ------------------------- |
+| boonlean  | false                     |
+| int       | 0                         |
+| float     | 0.0                       |
+| string    | ""               |
 
 ---
 
-### 今回はまったライブラリ
+### 本題: 今回はまったライブラリ
 
 https://github.com/jinzhu/gorm
 
 > The fantastic ORM library for Golang, aims to be developer friendly.
 
+golangでORマッパーを探すと上位にでてくる有名所のライブラリ
+
 ---
 
-### gormの基本
-userテーブルのid=1を更新する場合
+### gormの基本的な使い方
+例) userテーブルのid=1のレコードを更新する場合
 
 ```golang
 type User struct {
@@ -67,7 +77,7 @@ db.Model(&user).UpdateColumns(user)
 
 ---
 
-### 以下の内容に更新される
+### 以下のように更新される
 | id  | name | anyflg |
 | --- | ---- | ------ |
 | 1   | taro | true   |
@@ -75,7 +85,9 @@ db.Model(&user).UpdateColumns(user)
 
 ---
 
-### 意図と違う動作するパターン
+### 意図した動作にならない例
+
+boolで定義した列をfalseに更新したい
 
 ```golang
 type User struct {
@@ -92,7 +104,7 @@ db.Model(&user).UpdateColumns(user)
 
 ---
 
-### 実際にはanyflgが更新されなかった
+### 更新されなかった
 anyflgはtrueのまま
 
 | id  | name | anyflg |
@@ -101,9 +113,12 @@ anyflgはtrueのまま
 
 ---
 
-### なぜ？？？
+### なぜか？？？
 
-gormの内部実装でboolean型のfalseは値が指定されていないという扱いをしていた
+gormでは差分更新可能をサポートしており、モデルに更新したい列だけ指定して渡すことができる。
+例) Name列のみ更新したい　など
+その時 `値が指定されているかいないか` を内部実装で `ゼロ値かどうか` で判定している。
+よって、bool型のfalseはゼロ値であるため `更新する列として指定されていない` ものとして扱われていた
 
 ---
 
@@ -111,12 +126,13 @@ gormの内部実装でboolean型のfalseは値が指定されていないとい�
 以下のコード
 
 ```golang
+// isBlankのものはUPDATEクエリ組立時にスキップされる
 func isBlank(value reflect.Value) bool {
   switch value.Kind() {
   case reflect.String:
     return value.Len() == 0
   case reflect.Bool:
-    return !value.Bool()
+    return !value.Bool()  // falseの場合trueになる
   case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
     return value.Int() == 0
  略
@@ -125,13 +141,13 @@ func isBlank(value reflect.Value) bool {
 
 ---
 
-### 細かい話は以下のブログで！
+### 細かい話は以下のブログに書きました
 - [gormのUpdateColumnsでモデル内のboolゼロ値(false)を持ったカラムが更新されなかった - カメニッキ](http://tapira.hatenablog.com/entry/2017/08/09/173718)
 - [gormのUpdateColumnsでモデル内のboolゼロ値(false)を持ったカラムが更新されなかった の続き - カメニッキ](http://tapira.hatenablog.com/entry/2017/08/11/182249)
 
 ---
 
-### どうすればいいか
+### どうすればいいか？
 
 boolポインタ型を使用する
 
@@ -143,7 +159,7 @@ boolポインタ型を使用する
 type User struct {
   ID uint
   Name string
-  Anyflg *bool
+  Anyflg *bool  //ここ
 }
 ```
 
@@ -196,18 +212,20 @@ id=0の更新が行えないため、同様にuintポインタ型にしてあげ
 
 ---
 
-### 問題はここだけじゃなく更新対象絞込でも同じことが
+### さらに、問題はここだけじゃなく更新対象を絞込む場合にも
 
 以下のような場合
 
 | id  | name | anyflg |
 | --- | ---- | ------ |
+| 0   | tahira | false   |
 | 1   | taro | false   |
 | 2   | jiro | false   |
 | 3   | hanako | false   |
 
 ---
 
+id=0のユーザを更新するつもりで以下のようなコードにすると
 ```golang
 type User struct {
   ID uint
@@ -219,15 +237,15 @@ type User struct {
 user = User{ID: 0}
 
 db, _ := gorm.Open("mysql", "xxxxxxxxxxx")
-// id=0で絞込しているつもりが、未指定となり全件更新が走る！！！！！！
 db.Model(&user).Update('anyflg=true')
 ```
 
 ---
 
-### 更新された・・・
+### 全件更新された・・・
 | id  | name | anyflg |
 | --- | ---- | ------ |
+| 0   | tahira | true   |
 | 1   | taro | true   |
 | 2   | jiro | true   |
 | 3   | hanako | true   |
@@ -235,7 +253,7 @@ db.Model(&user).Update('anyflg=true')
 ---
 
 ### まとめ
-- golangのゼロ値が、型によっては他言語と違う形式になってる
+- golangのゼロ値が型によっては他言語と違う形式になってる
 - ライブラリのゼロ値判定によって、想像と異なる動作することがあるので注意が必要
 
 ---
