@@ -18,6 +18,8 @@
 
 ある型の変数に値を代入して初期化しなかった時の値
 
+---
+
 | 型        | ゼロ値                    |
 | --------- | ------------------------- |
 | boonlean  | false                     |
@@ -203,6 +205,8 @@ id=0の更新が行えないため、同様にuintポインタ型にしてあげ
 | 1   | taro | false   |
 | 2   | jiro | false   |
 | 3   | hanako | false   |
+
+---
 
 ```golang
 type User struct {
