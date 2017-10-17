@@ -60,7 +60,7 @@ type User struct {
 user = User{ID: 1, Name: "Tro", Anyflg: true}
 
 db, _ := gorm.Open("mysql", "xxxxxxxxxxx")
-db.Model(&user).Where('id = 1').UpdateColumns(user)
+db.Model(&user).UpdateColumns(user)
 ```
 
 ---
@@ -85,7 +85,7 @@ type User struct {
 user = User{ID: 1, Name: "Tro", Anyflg: false} ※ Anyflg: falseに注目
 
 db, _ := gorm.Open("mysql", "xxxxxxxxxxx")
-db.Model(&user).Where('id = 1').UpdateColumns(user)
+db.Model(&user).UpdateColumns(user)
 ```
 
 ---
@@ -131,3 +131,112 @@ func isBlank(value reflect.Value) bool {
 
 ### どうすればいいか
 
+boolポインタ型を使用する
+
+---
+
+### 以下のようにモデルの定義を変更
+
+```golang
+type User struct {
+  ID uint
+  Name string
+  Anyflg *bool
+}
+```
+
+こうするとゼロ値はfalseではなくnilになる
+
+---
+
+### gormのゼロ値判定処理においても、Ptr型であれば以下のように判定される
+
+```golang
+func isBlank(value reflect.Value) bool {
+  switch value.Kind() {
+略
+  case reflect.Interface, reflect.Ptr:
+    return value.IsNil()
+  }
+```
+
+---
+
+### 先程意図と違う動作するパターンは以下のように書き換える
+
+```golang
+type User struct {
+  ID uint
+  Name string
+  Anyflg *bool
+}
+
+// falseのポインタを渡す必要があるため予め定義が必要
+var PFalse = &[]bool{false}[0]
+
+user = User{ID: 1, Name: "Tro", Anyflg: &PFalse}
+
+db, _ := gorm.Open("mysql", "xxxxxxxxxxx")
+db.Model(&user).UpdateColumns(user)
+```
+
+---
+
+### 意図したとおりに更新された
+| id  | name | anyflg |
+| --- | ---- | ------ |
+| 1   | taro | false   |
+
+---
+
+### 同様のことがuint型などでも言える
+id=0の更新が行えないため、同様にuintポインタ型にしてあげなくてはいけない
+
+---
+
+### 問題はここだけじゃなく更新対象絞込でも同じことが
+
+以下のような場合
+| id  | name | anyflg |
+| --- | ---- | ------ |
+| 1   | taro | false   |
+| 2   | jiro | false   |
+| 3   | hanako | false   |
+
+```golang
+type User struct {
+  ID uint
+  Name string
+  Anyflg *bool
+}
+
+// IDにuintのゼロ値である0を指定
+user = User{ID: 0}
+
+db, _ := gorm.Open("mysql", "xxxxxxxxxxx")
+// id=0で絞込しているつもりが、未指定となり全件更新が走る！！！！！！
+db.Model(&user).Update('anyflg=true')
+```
+
+---
+
+### 更新された・・・
+| id  | name | anyflg |
+| --- | ---- | ------ |
+| 1   | taro | true   |
+| 2   | jiro | true   |
+| 3   | hanako | true   |
+
+---
+
+### まとめ
+- golangのゼロ値が、型によっては他言語と違う形式になってる
+- ライブラリのゼロ値判定によって、想像と異なる動作することがあるので注意が必要
+
+---
+
+### 何か他にいいやり方あれば教えてほしいです！
+
+---
+
+### おしまい
